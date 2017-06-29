@@ -10,6 +10,7 @@
 #include "errno.h"
 
 #include "stdlib.h"
+#include "stdarg.h"
 #include "string.h"
 
 const int kValidMagic = 0x0eadbeef;
@@ -31,9 +32,7 @@ typedef struct {
 } proccb_t;
 
 // Implementation for the process creation function.
-int proc_fork(proc_t* proc, 
-	procinfo_t* pinfo,
-	int fnum, int* fds) {
+int proc_fork(proc_t* proc, procinfo_t* pinfo, int fnum, int* fds) {
 
 	if(proc == NULL) {  errno = EINVAL; return -1; }
 	if(pinfo == NULL) { errno = EINVAL; return -1; }
@@ -130,21 +129,24 @@ int proc_fork(proc_t* proc,
 		
 		// Prepare the execution parameters.
 		const char** args = NULL;
-		const char** argst = NULL;
 		int argv = pinfo -> argv;
-		if(pinfo -> mode & PROC_NOPATH) {
-			args = (const char**)malloc(kSizeString * (1 + argv));
-			if(args == NULL) exit(-1);
-			argst = args;
+		if(argv >= 0) {
+			const char** argst = NULL;
+			if(pinfo -> mode & PROC_NOPATH) {
+				args = (const char**)malloc(kSizeString * (1 + argv));
+				if(args == NULL) exit(-1);
+				argst = args;
+			}
+			else {
+				args = (const char**)malloc(kSizeString * (2 + argv));
+				if(args == NULL) exit(-1);
+				args[0] = pinfo -> path;
+				argst = &args[1];
+			}
+			memcpy(argst, pinfo -> args, kSizeString * argv);
+			argst[argv] = (const char*)NULL;
 		}
-		else {
-			args = (const char**)malloc(kSizeString * (2 + argv));
-			if(args == NULL) exit(-1);
-			args[0] = pinfo -> path;
-			argst = &args[1];
-		}
-		memcpy(argst, pinfo -> args, kSizeString * argv);
-		argst[argv] = (const char*)NULL;
+		else args = pinfo -> args;
 
 		// Copy environments if necessary, and execute.
 		int envs = pinfo -> envs;
@@ -208,4 +210,37 @@ pid_t proc_pid(proc_t* proc) {
 	proccb_t* pcb = (proccb_t*)proc -> pcb;
 	if(pcb -> magic != kValidMagic) return -1;
 	return pcb -> pid;
+}
+
+// Implementation for setting arguments and execute.
+int proc_exec(proc_t* proc, procinfo_t* pinfo, int fnum, int* fds,
+	const char* path, ... /*(const char*)NULL*/) {
+
+	procinfo_t tpinfo;
+	tpinfo.path = path;
+
+	// Prepare argument list.
+	va_list vargs;
+	const char* varglist[proc_mxvarg];
+	tpinfo.argv = -1;
+	tpinfo.args = varglist;
+	varglist[0] = path;
+	varglist[proc_mxvarg - 1] = NULL;
+
+	va_start(vargs, path);
+	int i; for(i = 1; i < proc_mxvarg; i ++) 
+		varglist[i] = va_arg(vargs, const char*);
+	va_end(vargs);
+	if(varglist[proc_mxvarg - 1] != NULL) { 
+		errno = EOVERFLOW; return -1; }
+
+	// Prepare copying pinfo into the list.
+	tpinfo.envs = 0;
+	tpinfo.mode = PROC_NONE;
+	if(pinfo != NULL) {
+		tpinfo.envs  = pinfo -> envs;
+		tpinfo.envp  = pinfo -> envp;
+		tpinfo.mode  = pinfo -> mode;
+	}
+	return proc_fork(proc, &tpinfo, fnum, fds);
 }

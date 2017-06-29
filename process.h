@@ -53,7 +53,7 @@ typedef struct procinfo {
 	// set.
 	int argv; const char** args;
 
-	// The environments for creating the process.
+	// The path environments for creating the process.
 	// The process environments will be inherited.
 	int envs; const char** envp;
 
@@ -78,6 +78,18 @@ typedef struct proc {
 int proc_fork(proc_t* proc, 
 	procinfo_t* pinfo, 
 	int fnum, int* fds);
+
+// Create an process and execute it.
+// The same as proc_fork while the argument and path
+// are set separatedly, with a NULL-terminated string.
+// The size should never exceed the proc_mxvarg, or it
+// will receive a EOVERFLOW and the process will not
+// get executed.
+const int proc_mxvarg = 256;
+int proc_exec(proc_t* proc,
+	procinfo_t* pinfo,
+	int fnums, int* fds,
+	const char* args, ... /* (const char*)NULL */);
 
 // Wait for process to finish execution and cause
 // pipes to flushes.
